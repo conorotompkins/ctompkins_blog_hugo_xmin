@@ -1,0 +1,488 @@
+---
+title: Healthy Ride Network Analysis
+author: Conor Tompkins
+date: '2017-11-05'
+slug: healthy-ride-network-analysis
+categories:
+  - Pittsburgh
+  - R
+tags:
+  - Pittsburgh
+  - WPRDC
+  - Healthy Ride
+draft: false
+---
+
+
+
+<p>This post explores the Healthy Ride dataset using network analysis in R.</p>
+<p>This is my second post about the Healthy Ride bike service in Pittsburgh. You can find the first post <a href="https://ctompkins.netlify.com/2017/10/18/exploring-healthy-ride-pittsburgh-data/">here</a>, where I did some exploratory analysis of the data.</p>
+<p>First, load the R packages we will be using:</p>
+<pre class="r"><code>library(tidyverse)
+library(ggraph)
+library(igraph)
+library(lubridate)
+library(viridis)
+library(stringr)
+library(knitr)
+library(kableExtra)</code></pre>
+<p>Then set the theme to format the plots:</p>
+<pre class="r"><code>theme_set(theme_graph())</code></pre>
+<p>Set the seed for the random number generator so the charts look the same every time they are run:</p>
+<pre class="r"><code>set.seed(12345)</code></pre>
+<p>Load the data from the WPRDC (hosted on <a href="https://github.com/conorotompkins">my GitHub page</a>):</p>
+<pre class="r"><code>data &lt;- read_csv(&quot;https://raw.githubusercontent.com/conorotompkins/healthy_ride/master/data/data.csv&quot;)</code></pre>
+<pre><code>## Parsed with column specification:
+## cols(
+##   `Trip id` = col_integer(),
+##   Starttime = col_character(),
+##   Stoptime = col_character(),
+##   Bikeid = col_integer(),
+##   Tripduration = col_integer(),
+##   `From station id` = col_integer(),
+##   `From station name` = col_character(),
+##   `To station id` = col_integer(),
+##   `To station name` = col_character(),
+##   Usertype = col_character()
+## )</code></pre>
+<p>Again, we need to format the data and the column names to make them more useful for analysis. Since this is a repeat of the script from the last post, I will just do it all in one go:</p>
+<pre class="r"><code>colnames(data) &lt;- tolower(colnames(data))
+colnames(data) &lt;- gsub(&quot; &quot;, &quot;_&quot;, colnames(data))
+
+data_long &lt;- data %&gt;% 
+  rename(start_date_time = starttime,
+         stop_date_time = stoptime) %&gt;% 
+  gather(date_time_type, date_time, c(start_date_time, stop_date_time)) %&gt;% 
+  select(date_time_type, date_time, everything()) %&gt;% 
+  mutate(date_time_2 = date_time) %&gt;% 
+  separate(date_time, &quot; &quot;, into = c(&quot;date&quot;, &quot;time&quot;)) %&gt;% 
+  mutate(id = row_number(),
+         date = mdy(date),
+         year = year(date),
+         month = month(date, label = TRUE),
+         week = week(date),
+         time = hm(time),
+         hour = hour(time),
+         wday = wday(date, label = TRUE),
+         is_weekday = ifelse(wday %in% c(&quot;Mon&quot;, &quot;Tues&quot;, &quot;Wed&quot;, &quot;Thurs&quot;, &quot;Fri&quot;), &quot;weekday&quot;, &quot;weekend&quot;),
+         yday = yday(date),
+         mday = mday(date)) %&gt;% 
+  mutate(trip_duration = (tripduration / 60) / 60) %&gt;% 
+  gather(station_id_type, station_id, c(from_station_id, to_station_id)) %&gt;% 
+  gather(station_name_type, station_name, c(from_station_name, to_station_name)) %&gt;% 
+  select(date_time_type, 
+         is_weekday, 
+         date, 
+         year,
+         month,
+         time, 
+         hour,
+         wday,
+         yday,
+         mday,
+         date_time_2, 
+         station_id_type, 
+         station_id, 
+         station_name_type,
+         station_name,
+         everything())</code></pre>
+<p>The data is currently arranged to be “long”, which means that the data that shows where a trip started and ended are in the same column (station_name_type)</p>
+<pre class="r"><code>unique(data_long$station_name_type)</code></pre>
+<pre><code>## [1] &quot;from_station_name&quot; &quot;to_station_name&quot;</code></pre>
+<pre class="r"><code>data_long %&gt;% 
+  select(station_name_type, station_name, date_time_2) %&gt;% 
+  head() %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+station_name_type
+</th>
+<th style="text-align:left;">
+station_name
+</th>
+<th style="text-align:left;">
+date_time_2
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+from_station_name
+</td>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+5/31/2015 6:54
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+from_station_name
+</td>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+5/31/2015 6:57
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+from_station_name
+</td>
+<td style="text-align:left;">
+42nd St &amp; Butler St
+</td>
+<td style="text-align:left;">
+5/31/2015 6:58
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+from_station_name
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+5/31/2015 7:08
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+from_station_name
+</td>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+5/31/2015 7:15
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+from_station_name
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+5/31/2015 7:16
+</td>
+</tr>
+</tbody>
+</table>
+<p>This makes analyzing where a trip started and ended difficult.</p>
+<p>To make the data more useful for network analysis, we need to make it a bit wider. This code splits the contents of the station_name_type column into two separate columns: from_station_name and to_station_name.</p>
+<pre class="r"><code>data_wide &lt;- data_long %&gt;% 
+  spread(station_name_type, station_name) %&gt;% 
+   select(from_station_name, to_station_name, everything())
+
+data_wide[1:10, 1:3] %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+from_station_name
+</th>
+<th style="text-align:left;">
+to_station_name
+</th>
+<th style="text-align:left;">
+date_time_type
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+42nd St &amp; Butler St
+</td>
+<td style="text-align:left;">
+42nd St &amp; Butler St
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+37th St &amp; Butler St
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+10th St &amp; Penn Ave (David L. Lawrence Convention Center)
+</td>
+<td style="text-align:left;">
+10th St &amp; Penn Ave (David L. Lawrence Convention Center)
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+42nd St &amp; Butler St
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+42nd St &amp; Butler St
+</td>
+<td style="text-align:left;">
+Forbes Ave &amp; Market Square
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Forbes Ave &amp; Grant St
+</td>
+<td style="text-align:left;">
+Liberty Ave &amp; Stanwix St
+</td>
+<td style="text-align:left;">
+start_date_time
+</td>
+</tr>
+</tbody>
+</table>
+<p>To start, lets look at the entire network. The loops indicate that the trip began and ended at the same station.</p>
+<pre class="r"><code>simple_network &lt;- data_wide %&gt;% 
+  count(from_station_name, to_station_name, sort = TRUE)
+
+simple_network &lt;- simple_network %&gt;% 
+  graph_from_data_frame(directed = TRUE)
+
+ggraph(simple_network) +
+  geom_edge_fan(aes(edge_alpha = n)) +
+  geom_edge_loop(aes(edge_alpha = n)) +
+  geom_node_point() +
+  scale_edge_alpha_continuous(&quot;Number of rides&quot;, range = c(.1, 1))</code></pre>
+<p><img src="/post/2017-10-23-healthy-ride-network-analysis_files/figure-html/entire_network-1.png" width="672" /></p>
+<p>This is a bit of a hairball, and is frankly not useful.</p>
+<p>Instead, lets look at how the network of stations with at least 150 connections looks.</p>
+<pre class="r"><code>simple_network &lt;- data_wide %&gt;% 
+  count(from_station_name, to_station_name, sort = TRUE) %&gt;% 
+  filter(n &gt;= 150)
+
+simple_network &lt;- simple_network %&gt;% 
+  graph_from_data_frame(directed = TRUE)
+
+ggraph(simple_network) +
+  geom_edge_fan(aes(edge_alpha = n)) +
+  geom_edge_loop(aes(edge_alpha = n)) +
+  geom_node_point() +
+  scale_edge_alpha_continuous(&quot;Number of rides&quot;, range = c(.1, 1))</code></pre>
+<p><img src="/post/2017-10-23-healthy-ride-network-analysis_files/figure-html/top_stations_network-1.png" width="672" /></p>
+<p>There appear to be two clusters of stations.</p>
+<p>How does the network appear without trips that start and end at the same station?</p>
+<pre class="r"><code>simple_network &lt;- data_wide %&gt;% 
+  count(from_station_name, to_station_name, sort = TRUE) %&gt;% 
+  filter(n &gt;= 150,
+         from_station_name != to_station_name)
+
+simple_network &lt;- simple_network %&gt;% 
+  graph_from_data_frame(directed = TRUE)
+
+ggraph(simple_network) +
+  geom_edge_fan(aes(edge_alpha = n)) +
+  geom_edge_loop(aes(edge_alpha = n)) +
+  geom_node_point() +
+  scale_edge_alpha_continuous(&quot;Number of rides&quot;, range = c(.1, 1))</code></pre>
+<p><img src="/post/2017-10-23-healthy-ride-network-analysis_files/figure-html/top_stations_network_no_loop-1.png" width="672" /></p>
+<p>The two clusters stand out more in this view.</p>
+<p>We can also do a more traditional heatmap of the departure and arrival stations:</p>
+<pre class="r"><code>simple_network &lt;- data_wide %&gt;% 
+  count(from_station_name, to_station_name, sort = TRUE) %&gt;% 
+  top_n(400) %&gt;% 
+  ungroup() %&gt;% 
+  complete(from_station_name, to_station_name) %&gt;% 
+  replace_na(list(n = 0)) %&gt;% 
+  mutate(from_station_name_abbr = str_c(str_sub(from_station_name, 1, 18), &quot;...&quot;), #abbreviate the station names so they fit on the axes
+         to_station_name_abbr = str_c(str_sub(to_station_name, 1, 18), &quot;...&quot;))
+
+#check that we aren&#39;t losing any station names
+length(unique(simple_network$to_station_name)) == length(unique(simple_network$to_station_name_abbr))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>#create vector for ordering the x axis
+x_axis &lt;- simple_network %&gt;% 
+  group_by(from_station_name_abbr) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  arrange(desc(n)) %&gt;%
+  select(from_station_name_abbr) %&gt;% 
+  unlist()
+
+#create vector for ordering the yaxis  
+y_axis &lt;- simple_network %&gt;% 
+  group_by(to_station_name_abbr) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  arrange(desc(n)) %&gt;%
+  select(to_station_name_abbr) %&gt;% 
+  unlist()
+
+simple_network %&gt;% 
+  mutate(from_station_name_abbr = factor(from_station_name_abbr, levels = x_axis),
+         to_station_name_abbr = factor(to_station_name_abbr, levels = y_axis)) %&gt;% 
+  ggplot(aes(from_station_name_abbr, to_station_name_abbr, fill = n)) +
+  geom_tile() +
+  theme_bw() +
+  coord_equal() +
+  scale_fill_viridis() +
+  guides(fill = guide_colorbar(title = &quot;Number of Rides&quot;)) +
+  theme(axis.text = element_text(size = 6),
+        axis.text.x = element_text(angle = 90, vjust = 0))</code></pre>
+<p><img src="/post/2017-10-23-healthy-ride-network-analysis_files/figure-html/heatmap-1.png" width="672" /></p>
+<p>It appears that many trips start and end at the same station.</p>
+<p>We can investigate this phenomenon:</p>
+<pre class="r"><code>data_wide %&gt;% 
+  select(from_station_name, to_station_name) %&gt;% 
+  mutate(is_same = ifelse(from_station_name == to_station_name, &quot;same_location&quot;, &quot;different_location&quot;)) %&gt;%
+  group_by(is_same) %&gt;% 
+  count() %&gt;% 
+  spread(is_same, n) %&gt;% 
+  gather(location_type, n) %&gt;% 
+  select(location_type, n) %&gt;% 
+  mutate(n = round(n / sum(n), digits = 2)) %&gt;% 
+  kable(&quot;html&quot;) %&gt;% 
+  kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+location_type
+</th>
+<th style="text-align:right;">
+n
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+different_location
+</td>
+<td style="text-align:right;">
+0.73
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+same_location
+</td>
+<td style="text-align:right;">
+0.27
+</td>
+</tr>
+</tbody>
+</table>
+<p>27% of all trips end at the same station they began at.</p>
+<p>Does this pattern differ on weekdays vs. weekends?</p>
+<pre class="r"><code>df_test &lt;- data_wide %&gt;% 
+  select(from_station_name, to_station_name, is_weekday) %&gt;% 
+  mutate(is_same = ifelse(from_station_name == to_station_name, &quot;same_location&quot;, &quot;different_location&quot;)) %&gt;%
+  group_by(is_same, is_weekday) %&gt;% 
+  count() %&gt;% 
+  spread(is_same, n) %&gt;% 
+  gather(location_type, n, -is_weekday) %&gt;% 
+  mutate(from_location = &quot;from_location&quot;) %&gt;% 
+  select(is_weekday, from_location, location_type, n) %&gt;% 
+  mutate(n = round(n / sum(n), digits = 2)) %&gt;% 
+  arrange(is_weekday)
+
+df_test %&gt;% 
+  ggplot(aes(is_weekday, n, fill = location_type)) +
+  geom_col(position = &quot;dodge&quot;, color = &quot;black&quot;) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(y = &quot;% of rides&quot;,
+       title = &quot;&quot;) +
+  guides(fill = guide_legend(title = &quot;Location Type&quot;)) +
+  theme_bw()</code></pre>
+<p><img src="/post/2017-10-23-healthy-ride-network-analysis_files/figure-html/bar_plot-1.png" width="672" /></p>
+<p>A greater percentage of trips start and end at the same station on the weekends than on weekdays. This could be caused by people commuting to bike stations via car, going for a ride on a bike trail, and then returning to the same station.</p>
+<p>Does the network look different on weekdays vs. weekends?</p>
+<pre class="r"><code>simple_network &lt;- data_wide %&gt;% 
+  count(from_station_name, to_station_name, is_weekday, sort = TRUE) %&gt;% 
+  filter(n &gt;= 150)
+
+simple_network &lt;- simple_network %&gt;% 
+  graph_from_data_frame(directed = TRUE)
+
+ggraph(simple_network) +
+  geom_edge_fan(aes(edge_alpha = n,
+                    color = is_weekday)) +
+  geom_edge_loop(aes(edge_alpha = n,
+                     color = is_weekday)) +
+  geom_node_point() +
+  scale_edge_alpha_continuous(&quot;Number of rides&quot;, range = c(.3, 1)) +
+  scale_edge_color_discrete(&quot;Type of day&quot;) +
+  facet_edges(~is_weekday) +
+  th_foreground(foreground = &#39;grey80&#39;, border = TRUE)</code></pre>
+<p><img src="/post/2017-10-23-healthy-ride-network-analysis_files/figure-html/top_200_weekday-1.png" width="672" /></p>
+<p>The secondary cluster (on the bottom right) appears to be less connected on weekends</p>
