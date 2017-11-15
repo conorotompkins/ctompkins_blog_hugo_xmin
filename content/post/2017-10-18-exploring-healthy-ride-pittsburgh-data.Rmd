@@ -1,0 +1,275 @@
+---
+title: Exploring Healthy Ride Pittsburgh Data With R
+author: Conor Tompkins
+date: '2017-10-18'
+slug: exploring-healthy-ride-pittsburgh-data
+categories:
+  - Pittsburgh
+  - R
+tags:
+  - Pittsburgh
+  - R Markdown
+  - WPRDC
+---
+```{r initial options, message=FALSE, warning=FALSE, include=FALSE}
+options(scipen = 999)
+```
+
+Healthy Ride is a bike rental service in Pittsburgh. The [WPRDC](http://www.wprdc.org/) hosts [data about their service](https://data.wprdc.org/organization/about/healthy-ride). We can use the data to get an idea of how Pittsburghers use the service.
+
+In my analysis, I use R and tidyverse, lubridate, and some other packages.
+
+First, load the packages we will be using:
+```{r load packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(viridis)
+library(scales)
+```
+
+Set the theme to format the plots:
+```{r set theme}
+theme_set(theme_bw())
+```
+
+Load the data from the WPRDC (hosted on [my GitHub page](https://github.com/conorotompkins)):
+```{r load data}
+data <- read_csv("https://raw.githubusercontent.com/conorotompkins/healthy_ride/master/data/data.csv")
+```
+
+First, we need to format the data and the column names to make them more useful for analysis:
+```{r munge2}
+colnames(data) <- tolower(colnames(data))
+colnames(data) <- gsub(" ", "_", colnames(data))
+```
+
+Change to snake_case and drop old columns:
+```{r munge 2}
+data_long <- data %>% 
+  rename(start_date_time = starttime,
+         stop_date_time = stoptime)
+```
+
+Make the dataframe longer:
+```{r munge 3}
+data_long <- data_long %>% 
+  gather(date_time_type, date_time, c(start_date_time, stop_date_time)) %>% 
+  select(date_time_type, date_time, everything())
+```
+
+Format the date and time columns using lubridate:
+```{r munge 4}
+data_long <- data_long %>% 
+  mutate(date_time_2 = date_time) %>% 
+  separate(date_time, " ", into = c("date", "time")) %>% 
+  mutate(id = row_number(),
+         date = mdy(date),
+         year = year(date),
+         month = month(date, label = TRUE),
+         week = week(date),
+         time = hm(time),
+         hour = hour(time),
+         wday = wday(date, label = TRUE),
+         is_weekday = ifelse(wday %in% c("Mon", "Tues", "Wed", "Thurs", "Fri"), "weekday", "weekend"),
+         yday = yday(date),
+         mday = mday(date)) %>% 
+  mutate(trip_duration = (tripduration / 60) / 60)
+```
+
+Make the dataframe longer:
+```{r munge 5}
+data_long <- data_long %>% 
+  gather(station_id_type, station_id, c(from_station_id, to_station_id)) %>% 
+  gather(station_name_type, station_name, c(from_station_name, to_station_name))
+```
+
+Reorder the columns:
+```{r munge 6}
+data_long <- data_long %>% 
+  select(date_time_type, 
+         is_weekday, 
+         date, 
+         year,
+         month,
+         time, 
+         hour,
+         wday,
+         yday,
+         mday,
+         date_time_2, 
+         station_id_type, 
+         station_id, 
+         station_name_type,
+         station_name,
+         everything())
+```
+
+Let's look at how the data look:
+```{r preview data}
+data_long
+```
+
+How has the use of the service trended in the long term?
+```{r long term density line plot}
+data_long %>% 
+  filter(date_time_type == "start_date_time") %>% 
+  ggplot(aes(date)) +
+  geom_freqpoly(stat = "density") +
+  scale_x_date(date_labels = "%b %Y",
+               date_breaks = "3 months") +
+  labs(title = "Healthy Ride Pittsburgh",
+       x = "Date",
+       y = "Density of rides",
+       caption = "@conor_tompkins")
+```
+
+A cumulative look at the number of rides:
+```{r long term cumulative line plot}
+data_long %>% 
+  filter(station_name_type == "from_station_name") %>% 
+  arrange(date) %>% 
+  count(date) %>% 
+  mutate(cum_sum = cumsum(n)) %>% 
+  ggplot(aes(date, cum_sum)) +
+  geom_line() +
+    scale_x_date(date_labels = "%b %Y",
+               date_breaks = "3 months") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Healthy Ride Pittsburgh",
+      x = "Date",
+      y = "Cumulative sum of rides",
+      caption = "@conor_tompkins")
+```
+
+A yearly look at the data shows that ridership has dropped off in 2017:
+```{r yearly cumulative line plot}
+data_long %>%
+  select(year, yday) %>% 
+  mutate(year = as.factor(year)) %>% 
+  group_by(year, yday) %>% 
+  count() %>% 
+  ungroup() %>% 
+  group_by(year) %>% 
+  mutate(cum_sum = cumsum(n)) %>% 
+  ggplot(aes(yday, cum_sum,
+             color = year,
+             group = year)) +
+  geom_line() +
+  scale_y_continuous(labels = scales::comma) +
+  guides(color = guide_legend(title = "Year")) +
+  labs(title = "Healthy Ride Pittsburgh",
+      x = "Day of the year",
+      y = "Cumulative sum of rides",
+      caption = "@conor_tompkins") 
+```
+
+How are the number of rides distributed throughout the day?
+```{r hour plot}
+data_long %>% 
+  filter(date_time_type == "start_date_time") %>% 
+  ggplot(aes(hour)) +
+  geom_freqpoly(stat = "count") +
+  scale_x_continuous(breaks = seq(0, 23, by = 2)) +
+  labs(title = "Healthy Ride Pittsburgh",
+      x = "Hour",
+      y = "Count of rides",
+      caption = "@conor_tompkins") 
+```
+
+Ridership peaks during evening rush-hour.
+
+The trend is different for weekdays vs. weekends:
+```{r hour weekday vs weekend line plot}
+data_long %>% 
+  filter(date_time_type == "start_date_time") %>% 
+  ggplot(aes(hour, color = is_weekday)) +
+  geom_freqpoly(stat = "count") +
+  scale_x_continuous(breaks = seq(0, 23, by = 2)) +
+  scale_y_continuous(labels = scales::comma) +
+  guides(color = guide_legend(title = "Type of day")) +
+  labs(title = "Healthy Ride Pittsburgh",
+    x = "Hour",
+    y = "Count of rides",
+    caption = "@conor_tompkins")
+```
+
+Breaking it down by weekday, people appear to take rides during their lunch break on Fridays. Saturdays at around 1PM see peak usage.
+```{r weekday hour line plot}
+data_long %>%
+  filter(date_time_type == "start_date_time") %>% 
+  ggplot(aes(hour, color = wday)) +
+  geom_freqpoly(stat = "count") +
+  scale_x_continuous(breaks = seq(0, 23, by = 2)) +
+  scale_y_continuous(labels = scales::comma) +
+  guides(color = guide_legend(title = "Day of the week")) +
+  labs(title = "Healthy Ride Pittsburgh",
+    x = "Hour",
+    y = "Count of rides",
+    caption = "@conor_tompkins")
+```
+
+We can also zoom out to look at the data by year, month, day of the month, and hour.
+First, create a new dataframe and use complete() and replace_na() to fill out the dataframe:
+```{r create df_tile}
+#this make take a minute to run
+df_tile <- data_long %>% 
+  select(year, month, mday, hour) %>% 
+  group_by(year, month, mday, hour) %>% 
+  summarize(n = n()) %>% 
+  complete(year, month, mday = 1:31, hour = 0:23) %>% 
+  replace_na(replace = list(n = 0))
+```
+
+This code creates the tile plot:
+```{r count tile plot}
+#this make take a minute to run
+df_tile %>% 
+  ggplot(aes(mday, hour, fill = n)) +
+  geom_tile() +
+  scale_y_reverse(expand = c(0,0), 
+                  breaks = c(0, 8, 16)) +
+  scale_x_continuous(expand = c(0,0),
+                     breaks = c(1, 14, 28)) +
+  facet_grid(year ~ month) +
+  coord_equal() +
+  scale_fill_viridis() +
+  guides(fill = guide_colorbar(title = "Number of rides")) +
+  labs(title = "Healthy Ride Pittsburgh",
+    x = "Day of month",
+    y = "Hour",
+    caption = "@conor_tompkins") +
+  theme(strip.text.y = element_text(angle = 0),
+        axis.text = element_text(size = 6))
+```
+
+We can also look at the the sum of hours biked across the same date and time variables:
+```{r create df_tile2}
+#this make take a minute to run
+df_tile2 <- data_long %>%
+  select(year, month, mday, hour, trip_duration) %>% 
+  group_by(year, month, mday, hour) %>% 
+  summarize(trip_duration_sum = sum(trip_duration)) %>%
+  complete(year, month, mday = 1:31, hour = 0:23) %>% 
+  replace_na(replace = list(trip_duration_sum = 0))
+```
+
+```{r count tile plot2}
+#this make take a minute to run
+df_tile2 %>% 
+  ggplot(aes(mday, hour, fill = trip_duration_sum)) +
+  geom_tile() +
+  scale_y_reverse(expand = c(0,0), 
+                  breaks = c(0, 8, 16)) +
+  scale_x_continuous(expand = c(0,0),
+                     breaks = c(1, 14, 28)) +
+  facet_grid(year ~ month) +
+  coord_equal() +
+  scale_fill_viridis() +
+  guides(fill = guide_colorbar(title = "Hours ridden")) +
+  labs(title = "Healthy Ride Pittsburgh",
+    x = "Day of month",
+    y = "Hour",
+    caption = "@conor_tompkins") +
+  theme(strip.text.y = element_text(angle = 0),
+        axis.text = element_text(size = 6))
+```
