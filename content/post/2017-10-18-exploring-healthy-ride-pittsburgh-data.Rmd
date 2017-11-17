@@ -10,6 +10,8 @@ tags:
   - Pittsburgh
   - R Markdown
   - WPRDC
+output:
+  html_document
 ---
 ```{r initial options, message=FALSE, warning=FALSE, include=FALSE}
 options(scipen = 999)
