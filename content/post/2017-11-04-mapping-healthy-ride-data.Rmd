@@ -12,8 +12,7 @@ categories:
 - Pittsburgh
 - R
 output:
-  html_document:
-    highlight: tango
+  html_document
 ---
 
 This post is about mapping the Healthy Ride dataset in R.
