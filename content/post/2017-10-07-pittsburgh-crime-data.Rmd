@@ -11,6 +11,8 @@ tags:
   - WPRDC
   - Crime
   - R Markdown
+output:
+  html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -34,12 +36,7 @@ We will be using the following R packages for this analysis
 - viridis
 - ggmap
 
-Install these packages using the following code
-```{r install packages, eval = FALSE}
-install.packages(c("tidyverse", "lubridate", "viridis", "ggmap"))
-```
-
-Then load the packages
+Load the packages
 ```{r load libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(lubridate)
