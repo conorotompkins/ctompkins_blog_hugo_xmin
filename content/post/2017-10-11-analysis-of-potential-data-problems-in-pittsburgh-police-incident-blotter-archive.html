@@ -1,0 +1,434 @@
+---
+title: Analysis of Potential Data Problems in Pittsburgh Police Incident Blotter Archive
+author: Conor Tompkins
+date: '2017-10-11'
+slug: analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive
+categories:
+  - Pittsburgh
+  - R
+tags:
+  - Crime
+  - Pittsburgh
+  - WPRDC
+  - R Markdown
+output:
+  html_document
+---
+
+
+
+<p><em>Note: this analysis was performed in February 2017 using a contemporary dataset.</em></p>
+<p>This is an analysis of potential data problems in the Pittsburgh Police Incident Blotter Archive.</p>
+<p>These are the R packages used in this analysis:</p>
+<pre class="r"><code>library(rmarkdown)
+library(knitr)
+library(tidyverse)
+library(lubridate)
+library(viridis)
+library(ggmap)
+library(scales)</code></pre>
+<p>Refer to the <a href="http://ctompkins.netlify.com/2017/10/07/pittsburgh-crime-data/">Exploratory Analysis post</a> for an intro on working with this data</p>
+<div id="zone-reporting-consistency" class="section level1">
+<h1>Zone reporting consistency</h1>
+<p>Does the Zone the incident is assigned to match the geolocations the incident is reported at?</p>
+<pre class="r"><code>city_map_11 &lt;-  get_map(location = &quot;Oakland, Pittsburgh, PA&quot;,
+               zoom = 11,
+               maptype = &quot;toner&quot;, 
+               source = &quot;stamen&quot;,
+               messaging = FALSE)
+
+city_map_11 &lt;- ggmap(city_map_11)</code></pre>
+<pre class="r"><code>df_map_zones &lt;- df %&gt;% 
+  filter(zone %in% c(1:6)) %&gt;% 
+  select(zone, x, y) %&gt;% 
+  mutate(zone = as.factor(paste(&quot;Zone:&quot;, zone)))</code></pre>
+<p>In this view, the data looks accurate</p>
+<pre class="r"><code>city_map_11 +
+  geom_point(data = df_map_zones, aes(x, y, color = as.factor(zone)), alpha = .3, size = .7, show.legend = FALSE) +
+  scale_color_viridis(discrete = TRUE) +
+  labs(title = &quot;Pittsburgh Police Incident Data&quot;,
+       x = NULL,
+       y = NULL) +
+  theme(legend.position = &quot;bottom&quot;,
+        legend.direction = &quot;horizontal&quot;,
+        axis.text = element_blank())</code></pre>
+<pre><code>## Warning: Removed 22714 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/create%20zone%20map-1.png" width="672" /></p>
+<p>One note of concern is that 5% of the data is outside the x,y coordinates in this map</p>
+<pre class="r"><code>paste0(round(22716 / nrow(df_map_zones), 2) * 100, &quot;%&quot;)</code></pre>
+<pre><code>## [1] &quot;5%&quot;</code></pre>
+<p>Faceting the data by Zone to separate it, the data looks less accurate</p>
+<pre class="r"><code>city_map_12 &lt;-  get_map(location = &quot;Oakland, Pittsburgh, PA&quot;,
+               zoom = 12,
+               maptype = &quot;toner&quot;, 
+               source = &quot;stamen&quot;,
+               messaging = FALSE)
+
+city_map_12 &lt;- ggmap(city_map_12)</code></pre>
+<pre class="r"><code>city_map_12 +
+  geom_point(data = df_map_zones, aes(x, y, color = zone), alpha = .3, size = 1) +
+  facet_wrap(~zone, nrow = 2) +
+  scale_color_viridis(discrete = TRUE) +
+  labs(title = &quot;Pittsburgh Crime Incident Data&quot;,
+        x = NULL,
+       y = NULL) +
+  guides(alpha = FALSE,
+         color = FALSE) +
+  theme(legend.position = &quot;bottom&quot;,
+        legend.direction = &quot;horizontal&quot;,
+        axis.text = element_blank())</code></pre>
+<pre><code>## Warning: Removed 25078 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/faceted%20zone%20map-1.png" width="672" /></p>
+<p>The reporting problems appear most prominently in 2005 and 2006</p>
+<pre class="r"><code>city_map_facets &lt;-  ggmap(get_map(&quot;North Oakland, Pittsburgh, PA&quot;, 
+                     zoom = 12,
+                     maptype = &quot;toner-lite&quot;, 
+                     source = &quot;stamen&quot;))</code></pre>
+<pre class="r"><code>df_map_zones_year &lt;- df %&gt;% 
+  select(year, zone, x, y) %&gt;% 
+  filter(zone %in% c(1:6)) %&gt;% 
+  mutate(zone = as.factor(paste(&quot;Zone&quot;, zone)))</code></pre>
+<pre class="r"><code>city_map_facets +
+  geom_point(data = df_map_zones_year, aes(x, y), alpha = .3, size = 1) +
+  facet_grid(zone~year) +
+  scale_color_viridis(discrete = TRUE) +
+  labs(title = &quot;Pittsburgh Crime Incident Data&quot;,
+       x = NULL,
+       y = NULL) +
+  guides(alpha = FALSE,
+         color = FALSE) +
+  theme(legend.position = &quot;bottom&quot;,
+        legend.direction = &quot;horizontal&quot;,
+        axis.text = element_blank(),
+        strip.text = element_text(size = 9),
+        strip.text.y = element_text(angle=0))</code></pre>
+<pre><code>## Warning: Removed 27544 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/create%20zone%20year%20map%20plot-1.png" width="672" /></p>
+</div>
+<div id="neighborhood-reporting-consistency" class="section level1">
+<h1>Neighborhood reporting consistency</h1>
+<p>Does the data for the Neighborhoods look the same?</p>
+<p>Let’s just look at the top 10 Neighorhoods in terms of # of incidents</p>
+<pre class="r"><code>neighborhoods_top10 &lt;- df %&gt;% 
+  filter(!is.na(neighborhood)) %&gt;% 
+  select(neighborhood) %&gt;% 
+  group_by(neighborhood) %&gt;% 
+  count() %&gt;%
+  arrange(-n) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(neighborhood = factor(neighborhood)) %&gt;% 
+  top_n(n = 10, wt = n)
+
+df_nbh &lt;- df %&gt;% 
+  filter(neighborhood %in% neighborhoods_top10$neighborhood) %&gt;% 
+  select(neighborhood, x, y) %&gt;% 
+  mutate(neighborhood = factor(neighborhood, levels = neighborhoods_top10$neighborhood))</code></pre>
+<p>Looking at the data from the top 10 Neighborhoods in one map:</p>
+<pre class="r"><code>city_map_12 +
+  geom_point(data = df_nbh, aes(x, y, color = neighborhood), alpha = .3, size = 1) +
+  scale_color_viridis(discrete = TRUE) +
+  labs(title = &quot;Pittsburgh Police Incident Data&quot;,
+       x = NULL,
+       y = NULL) +
+  guides(alpha = FALSE,
+         color = FALSE) +
+  theme(axis.text = element_blank())</code></pre>
+<pre><code>## Warning: Removed 4820 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/nbh%20map-1.png" width="672" /></p>
+<p>The borders between Neighborhoods are significantly less clearly delineated than the borders for the Zones were</p>
+<p>How does the data look when it is faceted by Neighborhood?</p>
+<pre class="r"><code>city_map_12 +
+  geom_point(data = df_nbh, aes(x, y, color = neighborhood), alpha = .3, size = 1) +
+  facet_wrap(~neighborhood, ncol = 5) +
+  scale_color_viridis(discrete = TRUE) +
+  labs(title = &quot;Pittsburgh Police Incident Data&quot;,
+     x = NULL,
+     y = NULL) +
+  guides(color = FALSE) +
+  theme(axis.text = element_blank(),
+        strip.text = element_text(size = 6))</code></pre>
+<pre><code>## Warning: Removed 4820 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/nbh%20facet%20map-1.png" width="672" /></p>
+<p>There appears to be significant data quality issues with the Neighborhood designations</p>
+<p>Many Neighborhoods have incidents reported in multiple Zones</p>
+<pre class="r"><code>df_zone_nbh &lt;- df %&gt;% 
+  filter(zone %in% c(1:6)) %&gt;% 
+  group_by(zone, neighborhood) %&gt;% 
+  count() %&gt;% 
+  arrange(-n) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(neighborhood = factor(neighborhood))</code></pre>
+<pre class="r"><code>ggplot(df_zone_nbh, aes(zone, reorder(neighborhood, n), fill = n)) +
+  geom_tile(color = &quot;grey&quot;) +
+  facet_wrap(~zone,
+             nrow = 1,
+             scales = &quot;free_x&quot;) +
+  coord_equal() +
+  labs(x = &quot;Zone&quot;,
+       y = &quot;Neighborhood&quot;,
+       title = &quot;Pittsburgh Police Incident Data&quot;) +
+  guides(fill = guide_colorbar(&quot;Count of Incidents&quot;)) +
+  scale_fill_viridis() +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme(axis.text = element_text(size = 9),
+        strip.text = element_text(size = 9),
+        panel.grid = element_blank())</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/zone%20vs%20nbh%20plot-1.png" width="576" /></p>
+<p>What are the drivers of the incorrect assignments?</p>
+<p>First, we need to identify the correct Zone for each Neighborhood</p>
+<p>My method is to find the Zone with the highest # of incidents for a Neighborhood</p>
+<pre class="r"><code>df_correct_zone &lt;- df %&gt;% 
+  mutate(key = paste(zone, neighborhood)) %&gt;% 
+  select(key, zone, neighborhood) %&gt;% 
+  group_by(key, zone, neighborhood) %&gt;%
+  count() %&gt;% 
+  arrange(neighborhood, -n) %&gt;% 
+  group_by(neighborhood) %&gt;% 
+  slice(1) %&gt;% 
+  ungroup() %&gt;% 
+  arrange(zone) %&gt;% 
+  mutate(correct_zone = zone) %&gt;% 
+  select(correct_zone, neighborhood)</code></pre>
+<p>Testing this method for Zone 1:</p>
+<pre class="r"><code>df_correct_zone %&gt;% 
+  filter(correct_zone == &quot;1&quot;)</code></pre>
+<pre><code>## # A tibble: 18 x 2
+##    correct_zone           neighborhood
+##           &lt;chr&gt;                  &lt;chr&gt;
+##  1            1       Allegheny Center
+##  2            1         Allegheny West
+##  3            1       Brighton Heights
+##  4            1   California-Kirkbride
+##  5            1      Central Northside
+##  6            1                Chateau
+##  7            1         East Allegheny
+##  8            1               Fineview
+##  9            1             Manchester
+## 10            1     Marshall-Shadeland
+## 11            1            North Shore
+## 12            1      Northview Heights
+## 13            1            Perry North
+## 14            1            Perry South
+## 15            1          Spring Garden
+## 16            1  Spring Hill-City View
+## 17            1            Summer Hill
+## 18            1 Troy Hill-Herrs Island</code></pre>
+<p>Testing this method for Zone 2:</p>
+<pre class="r"><code>df_correct_zone %&gt;% 
+  filter(correct_zone == &quot;2&quot;)</code></pre>
+<pre><code>## # A tibble: 12 x 2
+##    correct_zone                neighborhood
+##           &lt;chr&gt;                       &lt;chr&gt;
+##  1            2           Bedford Dwellings
+##  2            2                       Bluff
+##  3            2       Central Lawrenceville
+##  4            2            Crawford-Roberts
+##  5            2 Golden Triangle/Civic Arena
+##  6            2         Lower Lawrenceville
+##  7            2                 Middle Hill
+##  8            2                 Polish Hill
+##  9            2              Strip District
+## 10            2             Terrace Village
+## 11            2                  Upper Hill
+## 12            2         Upper Lawrenceville</code></pre>
+<p>This approximation appears to be correct</p>
+<p>Then, calculate how many of a Neighborhood’s incidents were reported in the correct zone</p>
+<pre class="r"><code>df_zones_nbh &lt;- df %&gt;% 
+  mutate(key = paste(zone, neighborhood)) %&gt;% 
+  select(key, zone, neighborhood) %&gt;% 
+  filter(!is.na(zone),
+         !is.na(neighborhood),
+         !(zone %in% c(&quot;OSC&quot;, &quot;OUTSIDE&quot;)),
+         !(neighborhood %in% c(&quot;Outside State&quot;, &quot;Outside County&quot;, &quot;Outside City&quot;))) %&gt;% 
+  group_by(key, zone, neighborhood) %&gt;%
+  count() %&gt;% 
+  left_join(., df_correct_zone) %&gt;% 
+  mutate(flag = ifelse(zone == correct_zone, &quot;Correct&quot;, &quot;Incorrect&quot;)) %&gt;% 
+  group_by(zone, neighborhood, flag) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  spread(key = flag,
+         value = n,
+         fill = 0) %&gt;% 
+  group_by(neighborhood) %&gt;% 
+  summarize(Correct = sum(Correct),
+            Incorrect = sum(Incorrect),
+            count = Correct + Incorrect,
+            percent_correct = round(Correct/count, 2)) %&gt;% 
+  left_join(., df_correct_zone)</code></pre>
+<pre><code>## Joining, by = &quot;neighborhood&quot;
+## Joining, by = &quot;neighborhood&quot;</code></pre>
+<pre class="r"><code>ggplot(df_zones_nbh, aes(count, percent_correct, label = neighborhood, fill = correct_zone)) +
+  geom_label(size = 2) +
+  scale_y_continuous(labels = percent) +
+  scale_x_continuous(labels = comma) +
+  labs(x = &quot;Count of Incidents&quot;,
+       y = &quot;Percent Reported in Correct Zone&quot;,
+       title = &quot;Nieghborhood-Zone Reporting Analysis&quot;) +
+  guides(fill = guide_legend(title = &quot;Correct Zone&quot;)) +
+  theme(axis.title = element_text(size = 10))</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/correct%20zone%20percentage%20plot-1.png" width="672" /></p>
+<p>Zone 6 appears to have the lowest % of correct Zone assignments. Golden Triangle/Civic Arena and Bloomfield appear to have most of the incorrect assignments</p>
+<p>Our original question was: What are the drivers of the incorrect assignments?</p>
+<pre class="r"><code>df_bad_zones_helper1 &lt;- df %&gt;% 
+  mutate(key = paste(zone, neighborhood)) %&gt;% 
+  select(key, zone, neighborhood) %&gt;% 
+  filter(!is.na(zone),
+         !is.na(neighborhood),
+         (zone %in% 1:6),
+         !(neighborhood %in% c(&quot;Outside State&quot;, &quot;Outside County&quot;, &quot;Outside City&quot;))) %&gt;% 
+  group_by(key, zone, neighborhood) %&gt;%
+  count() %&gt;% 
+  left_join(., df_correct_zone) %&gt;% 
+  mutate(flag = ifelse(zone == correct_zone, &quot;Correct&quot;, &quot;Incorrect&quot;)) %&gt;% 
+  group_by(zone, neighborhood, flag) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  filter(flag == &quot;Incorrect&quot;) %&gt;% 
+  group_by(neighborhood) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  arrange(n)</code></pre>
+<pre><code>## Joining, by = &quot;neighborhood&quot;</code></pre>
+<pre class="r"><code>df_bad_zones_helper2 &lt;- df %&gt;% 
+  mutate(key = paste(zone, neighborhood)) %&gt;% 
+  select(key, zone, neighborhood) %&gt;% 
+  filter(!is.na(zone),
+         !is.na(neighborhood),
+         (zone %in% 1:6),
+         !(neighborhood %in% c(&quot;Outside State&quot;, &quot;Outside County&quot;, &quot;Outside City&quot;))) %&gt;% 
+  group_by(key, zone, neighborhood) %&gt;%
+  count() %&gt;% 
+  left_join(., df_correct_zone) %&gt;% 
+  mutate(flag = ifelse(zone == correct_zone, &quot;Correct&quot;, &quot;Incorrect&quot;)) %&gt;% 
+  group_by(zone, neighborhood, flag) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  filter(flag == &quot;Incorrect&quot;) %&gt;% 
+  group_by(zone) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  arrange(-n)</code></pre>
+<pre><code>## Joining, by = &quot;neighborhood&quot;</code></pre>
+<pre class="r"><code>df_bad_zones &lt;- df %&gt;% 
+  mutate(key = paste(zone, neighborhood)) %&gt;% 
+  select(key, zone, neighborhood) %&gt;% 
+  filter(!is.na(zone),
+         !is.na(neighborhood),
+         (zone %in% 1:6),
+         !(neighborhood %in% c(&quot;Outside State&quot;, &quot;Outside County&quot;, &quot;Outside City&quot;))) %&gt;% 
+  group_by(key, zone, neighborhood) %&gt;%
+  count() %&gt;% 
+  left_join(., df_correct_zone) %&gt;% 
+  mutate(flag = ifelse(zone == correct_zone, &quot;Correct&quot;, &quot;Incorrect&quot;)) %&gt;% 
+  group_by(zone, neighborhood, flag) %&gt;% 
+  summarize(n = sum(n)) %&gt;% 
+  filter(flag == &quot;Incorrect&quot;) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(zone = factor(zone, levels = df_bad_zones_helper2$zone),
+         neighborhood = factor(neighborhood, levels = df_bad_zones_helper1$neighborhood))</code></pre>
+<pre><code>## Joining, by = &quot;neighborhood&quot;</code></pre>
+<pre class="r"><code>ggplot(df_bad_zones, aes(zone, neighborhood, fill = n)) +
+  geom_tile() +
+  coord_equal() +
+  scale_fill_viridis() +
+  theme(panel.grid = element_blank()) +
+  scale_y_discrete(expand = c(0,0)) +
+  scale_x_discrete(expand = c(0,0)) +
+  labs(x = &quot;Zone&quot;,
+       y = &quot;Neighborhood&quot;,
+       title = &quot;Incorrect Neighborhood-Zone Assignments&quot;) +
+  guides(fill = guide_colorbar(&quot;Count of Incidents&quot;)) +
+  theme(axis.text = element_text(size = 8))</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/bad%20zones%20plot-1.png" width="576" /></p>
+<p>Brookline has the most incidents reported in the incorrect zone</p>
+<p>Zone 3 is a major driver of incorrect Zone assignments</p>
+<p>Again, the reporting problems appear most prominently in 2005 and 2006</p>
+<pre class="r"><code>city_map_facets &lt;-  ggmap(get_map(&quot;North Oakland, Pittsburgh, PA&quot;, 
+                                  zoom = 12,
+                                  maptype = &quot;toner-lite&quot;, 
+                                  source = &quot;stamen&quot;))</code></pre>
+<pre class="r"><code>df_nbh_year &lt;- df %&gt;% 
+  filter(neighborhood %in% c(&quot;Golden Triangle/Civic Arena&quot;, 
+                             &quot;Bloomfield&quot;, 
+                             &quot;North Oakland&quot;, 
+                             &quot;South Side Flats&quot;,
+                             &quot;Brookline&quot;, 
+                             &quot;Homewood South&quot;, 
+                             &quot;Central Oakland&quot;, 
+                             &quot;Lincoln-Lemington Lamar&quot;, 
+                             &quot;Carrick&quot;, 
+                             &quot;Shadyside&quot;)) %&gt;% 
+  select(year, neighborhood, x, y) %&gt;% 
+  mutate(neighborhood = factor(neighborhood, levels =  c(&quot;Golden Triangle/Civic Arena&quot;, 
+                             &quot;Bloomfield&quot;, 
+                             &quot;North Oakland&quot;, 
+                             &quot;South Side Flats&quot;,
+                             &quot;Brookline&quot;, 
+                             &quot;Homewood South&quot;, 
+                             &quot;Central Oakland&quot;, 
+                             &quot;Lincoln-Lemington Lamar&quot;, 
+                             &quot;Carrick&quot;, 
+                             &quot;Shadyside&quot;)))</code></pre>
+<pre class="r"><code>city_map_facets +
+  geom_point(data = df_nbh_year, aes(x, y), alpha = .3, size = 1) +
+  facet_grid(neighborhood~year) +
+  scale_color_viridis(discrete = TRUE) +
+  labs(title = &quot;Pittsburgh Crime Incident Data&quot;,
+       x = NULL,
+       y = NULL) +
+  guides(alpha = FALSE,
+         color = FALSE) +
+  theme(axis.text = element_blank(),
+        strip.text = element_text(size = 9),
+        strip.text.y = element_text(angle=0))</code></pre>
+<pre><code>## Warning: Removed 4705 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/create%20nbh%20year%20map%20plot-1.png" width="672" /></p>
+</div>
+<div id="zone-6" class="section level1">
+<h1>Zone 6</h1>
+<p>Zone 6 was closed in 2003, and reopened in 2008.</p>
+<p><a href="http://www.post-gazette.com/local/neighborhoods/2008/03/31/Police-manpower-tipped-to-West-End-s-Zone-6/stories/200803310145" class="uri">http://www.post-gazette.com/local/neighborhoods/2008/03/31/Police-manpower-tipped-to-West-End-s-Zone-6/stories/200803310145</a></p>
+<p>Therefore, we should expect that there are 0 incidents between 2005 (when the data begins) and 2008 in Zone 6</p>
+<pre class="r"><code>df %&gt;%
+  filter(zone == 6, year &lt;= 2008) %&gt;% 
+  select(zone, date, description) %&gt;% 
+  group_by(zone) %&gt;% 
+  count()</code></pre>
+<pre><code>## # A tibble: 1 x 2
+## # Groups:   zone [1]
+##    zone     n
+##   &lt;chr&gt; &lt;int&gt;
+## 1     6  2889</code></pre>
+<p>This shows that there are 2,889 incidents in this period for Zone 6</p>
+<pre class="r"><code>df %&gt;%
+  filter(zone == 6, year &lt;= 2008) %&gt;% 
+  select(zone, date, description) %&gt;% 
+  head()</code></pre>
+<pre><code>## # A tibble: 6 x 3
+##    zone       date                  description
+##   &lt;chr&gt;     &lt;date&gt;                        &lt;chr&gt;
+## 1     6 2005-07-09                         &lt;NA&gt;
+## 2     6 2005-10-05                         &lt;NA&gt;
+## 3     6 2005-10-05               IDENTITY THEFT
+## 4     6 2005-10-28                         &lt;NA&gt;
+## 5     6 2005-04-26 INVOLUNTARY DEV SEXUAL INTER
+## 6     6 2005-03-24                         &lt;NA&gt;</code></pre>
+<p>Where did these incidents occur?</p>
+<pre class="r"><code>z6_map &lt;-  get_map(location = &quot;Mount Washington, Pittsburgh, PA&quot;,
+               zoom = 12,
+               maptype = &quot;toner&quot;, 
+               source = &quot;stamen&quot;,
+               messaging = FALSE)</code></pre>
+<pre class="r"><code>df_map_z6 &lt;- df %&gt;% 
+  filter(zone == 6, year &lt;= 2008)</code></pre>
+<pre class="r"><code>ggmap(z6_map) +
+geom_point(data = df_map_z6, aes(x, y, color = zone), alpha = .3, size = 1) +
+  scale_color_viridis(discrete = TRUE) +
+  guides(color = FALSE) +
+  labs(x = NULL,
+       y = NULL,
+       title = &quot;Zone 6 Incidents 2005-2008&quot;) +
+  theme(axis.text = element_blank())</code></pre>
+<pre><code>## Warning: Removed 170 rows containing missing values (geom_point).</code></pre>
+<p><img src="/post/2017-10-11-analysis-of-potential-data-problems-in-pittsburgh-police-incident-blotter-archive_files/figure-html/plot%20map-1.png" width="672" /></p>
+<p>This broadly lines up with the borders of Zone 6</p>
+<p>Incidents reported in Zone 6 before Zone 6 was reopened in 2008 appear to be geolocated appropriately</p>
+<p>I think there should be a special flag for these incidents. Assigning incidents to a Zone that did not exist at the time seems confusing.</p>
+</div>
