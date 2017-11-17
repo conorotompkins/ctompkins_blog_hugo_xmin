@@ -11,6 +11,8 @@ tags:
   - Pittsburgh
   - WPRDC
   - R Markdown
+output:
+  html_document
 ---
 
 ```{r setup, include=FALSE}
