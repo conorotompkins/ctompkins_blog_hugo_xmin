@@ -110,7 +110,8 @@ data_long <- data_long %>%
 
 Let's look at how the data look:
 ```{r preview data}
-data_long
+data_long %>% 
+  head()
 ```
 
 How has the use of the service trended in the long term?
