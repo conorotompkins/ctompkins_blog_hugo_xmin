@@ -10,7 +10,8 @@ tags:
   - Pittsburgh
   - WPRDC
   - Healthy Ride
-draft: false
+output:
+  html_document
 ---
 
 ```{r initial options, message=FALSE, warning=FALSE, include=FALSE}
