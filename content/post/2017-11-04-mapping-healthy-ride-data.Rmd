@@ -11,10 +11,9 @@ tags:
 categories:
 - Pittsburgh
 - R
-output: 
-  prettydoc::html_pretty:
-    theme: cayman
-    highlight: github
+output:
+  html_document:
+    highlight: default
 ---
 
 This post is about mapping the Healthy Ride dataset in R.
