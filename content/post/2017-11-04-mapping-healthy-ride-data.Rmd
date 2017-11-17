@@ -13,7 +13,7 @@ categories:
 - R
 output:
   html_document:
-    highlight: default
+    highlight: tango
 ---
 
 This post is about mapping the Healthy Ride dataset in R.
